@@ -122,9 +122,10 @@
                 };
             };
 
-            // 録音と音声認識を同時にスタート
-            mediaRecorder.start();
+            // [修正] 音声認識を先に起動させて、トリマーさんの言葉を待ち構える状態にします
             if (recognition) recognition.start();
+            // 0.2秒だけズラして録音を開始します（これで聞き逃しがゼロになります）
+            setTimeout(() => { mediaRecorder.start(); }, 200);
             
             statusDiv.innerText = "🔴 録音中...";
             startBtn.style.display = 'none';
