@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トリマーインタビュー録音</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f9f9f9; color: #333; }
+        .container { max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        input[type="text"] { width: 80%; padding: 10px; margin-bottom: 20px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; }
+        button { width: 85%; padding: 15px; font-size: 18px; font-weight: bold; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px; }
+        .btn-start { background-color: #ff4d4d; color: white; }
+        .btn-stop { background-color: #333; color: white; display: none; }
+        #status { margin-top: 20px; font-weight: bold; color: #666; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🐾 トリマーヒアリング</h2>
+    <p>わんちゃんの名前を入力して録音を開始してください</p>
+    
+    <input type="text" id="dogName" placeholder="例: ポチ、ココア" required><br>
+    
+    <button id="startBtn" class="btn-start">🎤 録音スタート</button>
+    <button id="stopBtn" class="btn-stop">🛑 録音ストップ（自動保存）</button>
+    
+    <div id="status">待機中</div>
+</div>
+
+<script>
+    // ★ステップ1で新しく取得した「GASのウェブアプリURL」をここに貼り付けてください
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbzObyeexF7-Z_C4X4kihHAXHk8T4GLi4uUf4flDEIgEZ64PABFFX2PIxAZTNCg02UFs/exec";
+
+    let mediaRecorder;
+    let audioChunks = [];
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusDiv = document.getElementById('status');
+    const dogNameInput = document.getElementById('dogName');
+
+    startBtn.addEventListener('click', async () => {
+        if (!dogNameInput.value.trim()) {
+            alert('わんちゃんの名前を入力してください！');
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                statusDiv.innerText = "音声処理中＆アップロード中...";
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = async () => {
+                    const base64Data = reader.result.split(',');
+                    
+                    const formData = new FormData();
+                    formData.append('file', base64Data[1]); // 純粋なベース64部分のみ送信
+                    formData.append('dogName', dogNameInput.value.trim());
+
+                    try {
+                        const response = await fetch(GAS_URL, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const result = await response.json();
+                        if (result.status === 'success') {
+                            statusDiv.innerText = "✅ マイドライブへの保存が完了しました！";
+                            dogNameInput.value = ""; 
+                        } else {
+                            statusDiv.innerText = "❌ エラー: " + result.message;
+                        }
+                    } catch (err) {
+                        statusDiv.innerText = "❌ 送信エラーが発生しました。Googleドライブを確認してください。";
+                    }
+                    
+                    startBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
+                };
+            };
+
+            mediaRecorder.start();
+            statusDiv.innerText = "🔴 録音中...";
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+
+        } catch (err) {
+            alert('マイクのアクセスが拒否されたか、マイクが見つかりません。');
+            console.error(err);
+        }
+    });
+
+    stopBtn.addEventListener('click', () => {
+        mediaRecorder.stop();
+    });
+</script>
+
+</body>
+</html>
