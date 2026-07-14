@@ -12,7 +12,6 @@
         .btn-start { background-color: #ff4d4d; color: white; }
         .btn-stop { background-color: #333; color: white; display: none; }
         #status { margin-top: 20px; font-weight: bold; color: #666; }
-        #transcriptPreview { margin-top: 15px; font-size: 14px; color: #888; font-style: italic; background: #eee; padding: 10px; border-radius: 5px; text-align: left; max-height: 100px; overflow-y: auto; display: none; }
     </style>
 </head>
 <body>
@@ -27,55 +26,19 @@
     <button id="stopBtn" class="btn-stop">🛑 録音ストップ（自動保存）</button>
     
     <div id="status">待機中</div>
-    <div id="transcriptPreview">🎙️ 声を聴き取り中...</div>
 </div>
 
 <script>
-    // =========================================================================
-    // ★重要: あなたの「GASのウェブアプリURL」をここに貼り付けてください
-    // =========================================================================
+    // ★新しくデプロイした最新の「GASのウェブアプリURL」をここに貼り付けてください
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzObyeexF7-Z_C4X4kihHAXHk8T4GLi4uUf4flDEIgEZ64PABFFX2PIxAZTNCg02UFs/exec";
 
     let mediaRecorder;
     let audioChunks = [];
-    let recognition;
-    let finalTranscript = "";
-    let isRecording = false;
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusDiv = document.getElementById('status');
     const dogNameInput = document.getElementById('dogName');
-    const previewDiv = document.getElementById('transcriptPreview');
-
-    // 音声認識（Web Speech API）の初期設定
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-        recognition = new SpeechRecognition();
-        recognition.lang = 'ja-JP';
-        recognition.interimResults = true;
-        recognition.continuous = false; // スマホのバグ・強制停止を防ぐため単発で動かします
-
-        recognition.onresult = event => {
-            let interimTranscript = "";
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i].transcript + " ";
-                } else {
-                    interimTranscript += event.results[i].transcript;
-                }
-            }
-            // 画面上にリアルタイムで文字を表示
-            previewDiv.innerText = finalTranscript + interimTranscript;
-        };
-
-        // 音声認識が途切れたら、録音中である限り自動で再起動する（スマホ対策）
-        recognition.onend = () => {
-            if (isRecording) {
-                try { recognition.start(); } catch(e) {}
-            }
-        };
-    }
 
     startBtn.addEventListener('click', async () => {
         if (!dogNameInput.value.trim()) {
@@ -84,36 +47,27 @@
         }
 
         try {
-            // スマホのマイクにアクセス
+            // マイクへのアクセスを取得
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
-            finalTranscript = "";
-            previewDiv.innerText = "🎙️ 声を聴き取り中...";
-            previewDiv.style.display = "block";
-            isRecording = true;
 
             mediaRecorder.ondataavailable = event => {
                 audioChunks.push(event.data);
             };
 
             mediaRecorder.onstop = async () => {
-                statusDiv.innerText = "音声処理中＆アップロード中...";
+                statusDiv.innerText = "音声送信中＆サーバーで文字起こし中...\n(15秒ほどかかる場合があります)";
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
-                    // 純粋なBase64文字列を取得（「文字列をデコードできません」エラーの修正）
-                    const base64Data = reader.result.split(',')[1]; 
+                    const base64Data = reader.result.split(',');
                     
                     const formData = new FormData();
                     formData.append('file', base64Data);
                     formData.append('dogName', dogNameInput.value.trim());
-                    
-                    // 改行コード等による送信エラーを防ぎ、文字起こしテキストを添付
-                    const textToSend = finalTranscript.trim() || previewDiv.innerText;
-                    formData.append('transcript', textToSend.replace(/\n/g, ' ') || "（音声がうまくテキスト化されませんでした）");
 
                     try {
                         const response = await fetch(GAS_URL, {
@@ -122,9 +76,8 @@
                         });
                         const result = await response.json();
                         if (result.status === 'success') {
-                            statusDiv.innerText = "✅ マイドライブへの保存が完了しました！";
+                            statusDiv.innerText = "✅ マイドライブへの保存と文字起こしが完了しました！";
                             dogNameInput.value = ""; 
-                            previewDiv.style.display = "none";
                         } else {
                             statusDiv.innerText = "❌ エラー: " + result.message;
                         }
@@ -137,15 +90,8 @@
                 };
             };
 
-            // 先に録音を開始
+            // 録音のみをシンプルにスタート（これで変な音は鳴りません）
             mediaRecorder.start();
-            
-            // マイクの競合バグを避けるため、0.3秒だけズラして音声認識を安全に起動
-            setTimeout(() => {
-                if (recognition) {
-                    try { recognition.start(); } catch(e) {}
-                }
-            }, 300);
             
             statusDiv.innerText = "🔴 録音中...";
             startBtn.style.display = 'none';
@@ -158,11 +104,7 @@
     });
 
     stopBtn.addEventListener('click', () => {
-        isRecording = false;
         mediaRecorder.stop();
-        if (recognition) {
-            try { recognition.stop(); } catch(e) {}
-        }
     });
 </script>
 
