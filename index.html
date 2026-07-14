@@ -11,7 +11,7 @@
         button { width: 85%; padding: 15px; font-size: 18px; font-weight: bold; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px; }
         .btn-start { background-color: #ff4d4d; color: white; }
         .btn-stop { background-color: #333; color: white; display: none; }
-        #status { margin-top: 20px; font-weight: bold; color: #666; }
+        #status { margin-top: 20px; font-weight: bold; color: #666; white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -47,7 +47,6 @@
         }
 
         try {
-            // マイクへのアクセスを取得
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
@@ -63,7 +62,8 @@
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
-                    const base64Data = reader.result.split(',');
+                    // 全体のデータをそのままGASに渡します（GAS側で安全に分解します）
+                    const base64Data = reader.result;
                     
                     const formData = new FormData();
                     formData.append('file', base64Data);
@@ -90,9 +90,7 @@
                 };
             };
 
-            // 録音のみをシンプルにスタート（これで変な音は鳴りません）
             mediaRecorder.start();
-            
             statusDiv.innerText = "🔴 録音中...";
             startBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
