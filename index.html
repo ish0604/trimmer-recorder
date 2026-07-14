@@ -90,14 +90,15 @@
                 
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
-                reader.onloadend = async () => {
-                    const base64Data = reader.result.split(',');
+                reader.onloadend = async () => {                    
+                    // [修正] 配列の2番目（純粋なBase64文字列）を確実に指定します
+                    const base64Data = reader.result.split(',')[1]; 
                     
                     const formData = new FormData();
                     formData.append('file', base64Data);
                     formData.append('dogName', dogNameInput.value.trim());
-                    // 画面側で認識した高精度なテキストを一緒にGASへ送る
-                    formData.append('transcript', finalTranscript || "（音声は認識されませんでした）");
+                    // [修正] 改行などが原因で送信エラーにならないよう安全な形に処理します
+                    formData.append('transcript', finalTranscript.replace(/\n/g, ' ') || "（音声は認識されませんでした）");
 
                     try {
                         const response = await fetch(GAS_URL, {
