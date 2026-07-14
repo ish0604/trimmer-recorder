@@ -29,7 +29,7 @@
 </div>
 
 <script>
-    // ★新しくデプロイした最新の「GASのウェブアプリURL」をここに貼り付けてください
+    // ★重要: あなたの「GASのウェブアプリURL」をここに貼り付けてください
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzObyeexF7-Z_C4X4kihHAXHk8T4GLi4uUf4flDEIgEZ64PABFFX2PIxAZTNCg02UFs/exec";
 
     let mediaRecorder;
@@ -56,18 +56,47 @@
             };
 
             mediaRecorder.onstop = async () => {
-                statusDiv.innerText = "音声送信中＆サーバーで文字起こし中...\n(15秒ほどかかる場合があります)";
+                statusDiv.innerText = "音声送信中＆高精度文字起こし中...\n(15秒ほどかかる場合があります)";
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 
+                // 【新ロジック】録音データが確定した瞬間に、スマホのChrome標準の音声認識エンジンで文字起こしを一発実行
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                let textResult = "（音声から文字を検出できませんでした）";
+                
+                if (SpeechRecognition) {
+                    const recognition = new SpeechRecognition();
+                    recognition.lang = 'ja-JP';
+                    
+                    // 音声ファイルをブラウザに聴かせて一瞬でテキスト化
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audioForRec = new Audio(audioUrl);
+                    
+                    recognition.onresult = event => {
+                        textResult = "";
+                        for (let i = 0; i < event.results.length; ++i) {
+                            textResult += event.results[i][0].transcript + "\n";
+                        }
+                    };
+
+                    // バックグラウンドで再生しながら文字起こしを走らせる
+                    recognition.start();
+                    audioForRec.play();
+                    
+                    // 音声の再生が終わるまで少しだけ待機
+                    await new Promise(resolve => audioForRec.onended = resolve);
+                    recognition.stop();
+                }
+
+                // GASへデータを送信
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
-                    // 全体のデータをそのままGASに渡します（GAS側で安全に分解します）
                     const base64Data = reader.result;
                     
                     const formData = new FormData();
                     formData.append('file', base64Data);
                     formData.append('dogName', dogNameInput.value.trim());
+                    formData.append('transcript', textResult); // 起こしたテキストをそのまま添付
 
                     try {
                         const response = await fetch(GAS_URL, {
@@ -91,7 +120,7 @@
             };
 
             mediaRecorder.start();
-            statusDiv.innerText = "🔴 録音中...";
+            statusDiv.innerText = "🔴 🔴 インタビュー録音中...";
             startBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
 
