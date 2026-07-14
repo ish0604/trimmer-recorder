@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>トリマーインタビュー録音</title>
+    <title>トリマーインタビュー録写</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background: #f9f9f9; color: #333; }
         .container { max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -12,6 +12,7 @@
         .btn-start { background-color: #ff4d4d; color: white; }
         .btn-stop { background-color: #333; color: white; display: none; }
         #status { margin-top: 20px; font-weight: bold; color: #666; }
+        #transcriptPreview { margin-top: 15px; font-size: 14px; color: #888; font-style: italic; background: #eee; padding: 10px; border-radius: 5px; text-align: left; max-height: 100px; overflow-y: auto; display: none; }
     </style>
 </head>
 <body>
@@ -26,18 +27,44 @@
     <button id="stopBtn" class="btn-stop">🛑 録音ストップ（自動保存）</button>
     
     <div id="status">待機中</div>
+    <div id="transcriptPreview" id="preview">🎙️ 聞き取り中のテキストがここに表示されます...</div>
 </div>
 
 <script>
-    // ★ステップ1で新しく取得した「GASのウェブアプリURL」をここに貼り付けてください
+    // ★ご自身の「GASのウェブアプリURL」をここに貼り付けてください
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzObyeexF7-Z_C4X4kihHAXHk8T4GLi4uUf4flDEIgEZ64PABFFX2PIxAZTNCg02UFs/exec";
 
     let mediaRecorder;
     let audioChunks = [];
+    let recognition;
+    let finalTranscript = "";
+
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusDiv = document.getElementById('status');
     const dogNameInput = document.getElementById('dogName');
+    const previewDiv = document.getElementById('transcriptPreview');
+
+    // ブラウザの音声認識(Web Speech API)の準備
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'ja-JP';
+        recognition.interimResults = true; // 途中経過も取得
+        recognition.continuous = true;     // 連続して認識
+
+        recognition.onresult = event => {
+            let interimTranscript = "";
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript + "\n";
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+            previewDiv.innerText = finalTranscript + interimTranscript;
+        };
+    }
 
     startBtn.addEventListener('click', async () => {
         if (!dogNameInput.value.trim()) {
@@ -49,6 +76,9 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
+            finalTranscript = "";
+            previewDiv.innerText = "";
+            previewDiv.style.display = "block";
 
             mediaRecorder.ondataavailable = event => {
                 audioChunks.push(event.data);
@@ -64,8 +94,10 @@
                     const base64Data = reader.result.split(',');
                     
                     const formData = new FormData();
-                    formData.append('file', base64Data[1]); // 純粋なベース64部分のみ送信
+                    formData.append('file', base64Data);
                     formData.append('dogName', dogNameInput.value.trim());
+                    // 画面側で認識した高精度なテキストを一緒にGASへ送る
+                    formData.append('transcript', finalTranscript || "（音声は認識されませんでした）");
 
                     try {
                         const response = await fetch(GAS_URL, {
@@ -76,11 +108,12 @@
                         if (result.status === 'success') {
                             statusDiv.innerText = "✅ マイドライブへの保存が完了しました！";
                             dogNameInput.value = ""; 
+                            previewDiv.style.display = "none";
                         } else {
                             statusDiv.innerText = "❌ エラー: " + result.message;
                         }
                     } catch (err) {
-                        statusDiv.innerText = "❌ 送信エラーが発生しました。Googleドライブを確認してください。";
+                        statusDiv.innerText = "❌ 送信エラーが発生しました。";
                     }
                     
                     startBtn.style.display = 'inline-block';
@@ -88,7 +121,10 @@
                 };
             };
 
+            // 録音と音声認識を同時にスタート
             mediaRecorder.start();
+            if (recognition) recognition.start();
+            
             statusDiv.innerText = "🔴 録音中...";
             startBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
@@ -101,6 +137,7 @@
 
     stopBtn.addEventListener('click', () => {
         mediaRecorder.stop();
+        if (recognition) recognition.stop();
     });
 </script>
 
